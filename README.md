@@ -7,9 +7,18 @@ In the next ~30 minutes you will:
 2. **Stage 2, Wall following:** run an F1TENTH simulator and a separate
    controller node that drives the car, and tune it live.
 
+All code is here: **https://github.com/HarunTeper/ROS2-ASCI-RTS**
+
 ---
 
 ## Setup
+
+Clone the repository:
+
+```bash
+git clone https://github.com/HarunTeper/ROS2-ASCI-RTS.git
+cd ROS2-ASCI-RTS
+```
 
 ```bash
 # Build the image once. This downloads the ROS 2 base image and clones the

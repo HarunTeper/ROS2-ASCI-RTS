@@ -1,0 +1,84 @@
+# =============================================================================
+#  ROS 2 Hands-On  --  one compose file, two stages selected by "profiles".
+# =============================================================================
+#
+#  STAGE 1  (Hello ROS 2):
+#     docker compose run --rm shell
+#     # then, inside the container, run nodes yourself:
+#     #   ros2 run demo_nodes_cpp talker      (and a listener in a second shell)
+#     #   ros2 launch demo_nodes_cpp talker_listener.launch.py
+#
+#  STAGE 2  (Wall following in the F1TENTH simulator):
+#     xhost +local:docker          # let containers open windows (once per login)
+#     docker compose --profile sim up          # starts ONLY the sim + RViz
+#     # then, in a second terminal, start the controller yourself:
+#     docker compose run --rm wall_follower
+#
+#  All services share the same image (built once from docker/Dockerfile) and
+#  the same ROS_DOMAIN_ID, so they discover each other automatically.
+# =============================================================================
+
+x-common: &common
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: ros2-handson:latest
+  environment:
+    - ROS_DOMAIN_ID=42
+    - DISPLAY=${DISPLAY}
+    - QT_X11_NO_MITSHM=1
+    - LIBGL_ALWAYS_SOFTWARE=1     # CPU-only software OpenGL for RViz / rqt
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    # Mount the node source over the copy in the workspace. colcon was built
+    # with --symlink-install, so editing wall_follow.py here takes effect on
+    # the next `ros2 run` -- no rebuild needed.
+    - ./wall_follower/wall_follower:/sim_ws/src/wall_follower/wall_follower:rw
+  network_mode: host            # simplest node discovery between containers
+  ipc: host
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # STAGE 1 - HELLO ROS 2
+  #   An interactive shell. Run the nodes yourself from inside:
+  #     docker compose run --rm shell
+  # ---------------------------------------------------------------------------
+  shell:
+    <<: *common
+    profiles: ["manual"]      # not auto-started; use `docker compose run shell`
+    stdin_open: true
+    tty: true
+    command: bash
+
+  # ---------------------------------------------------------------------------
+  # STAGE 2 - WALL FOLLOWING
+  # ---------------------------------------------------------------------------
+
+  # The F1TENTH simulator + RViz. Started on its own with:
+  #     docker compose --profile sim up
+  simulator:
+    <<: *common
+    profiles: ["sim"]
+    container_name: f1tenth_sim
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Override the bundled sim config: car starts on the track, teleop OFF.
+      - ./config/sim.yaml:/sim_ws/src/f1tenth_gym_ros/config/sim.yaml:ro
+    # Start the safety watchdog alongside the simulator so the car stops if the
+    # controller dies (the gym otherwise holds the last command forever).
+    command: >
+      bash -c "python3 /opt/safety_watchdog.py &
+               ros2 launch f1tenth_gym_ros gym_bridge_launch.py"
+
+  # The controller. NOT started by the sim profile -- you start it by hand:
+  #     docker compose run --rm wall_follower
+  # Tune parameters live with:
+  #     docker compose run --rm wall_follower ros2 run rqt_reconfigure rqt_reconfigure
+  wall_follower:
+    <<: *common
+    profiles: ["manual"]      # not started by `--profile sim up`;
+    container_name: wall_follower   # use `docker compose run --rm wall_follower`
+    stdin_open: true
+    tty: true
+    command: ros2 run wall_follower wall_follow

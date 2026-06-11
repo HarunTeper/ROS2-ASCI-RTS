@@ -25,6 +25,12 @@ on Linux allow containers to use your display **once per login**:
 xhost +local:docker
 ```
 
+> **On macOS?** Stage 1 works as-is. Stage 2 (RViz + the separate sim/controller
+> containers) relies on Linux X11 and Docker host networking, which Docker
+> Desktop on Mac does **not** provide out of the box — so it is **not tested on
+> Mac**. The easy path: pair up with a Linux neighbour for Stage 2. To try it
+> solo anyway, see [Appendix: running Stage 2 on macOS](#appendix-running-stage-2-on-macos).
+
 ---
 
 ## Stage 1: Hello ROS 2  (~8 min)
@@ -202,3 +208,46 @@ docker compose --profile sim down
 # Inspect a running system
 ros2 node list / topic list / topic echo <topic> / topic hz <topic>
 ```
+
+---
+
+## Appendix: running Stage 2 on macOS
+
+**Best-effort, not tested.** If you can, pair with a Linux machine for Stage 2.
+Two macOS-specific problems and how to work around them:
+
+**1. Display (RViz / rqt).** Macs have no X server. Install
+[XQuartz](https://www.xquartz.org/), then:
+
+```bash
+open -a XQuartz
+# XQuartz > Settings > Security: tick "Allow connections from network clients",
+# then quit and reopen XQuartz.
+xhost + 127.0.0.1
+export DISPLAY=host.docker.internal:0
+```
+
+Run the `docker compose` commands from that same terminal so `DISPLAY` is set.
+(`xhost +local:docker` from the Linux instructions does nothing on Mac — use the
+two lines above instead.)
+
+**2. Node discovery between containers.** `network_mode: host` binds to Docker's
+Linux VM, not to macOS, so the separately-started simulator and controller may
+not find each other. Easiest fix: run the controller **inside the simulator
+container** instead of as a second `docker compose run`:
+
+```bash
+docker compose --profile sim up                 # terminal 1: sim + RViz
+docker compose exec simulator \
+    ros2 run wall_follower wall_follow           # terminal 2: controller, same container
+```
+
+Live tuning then also runs via `exec`:
+
+```bash
+docker compose exec simulator \
+    ros2 run rqt_reconfigure rqt_reconfigure
+```
+
+Apple Silicon builds the image as `arm64` (native, fine, just a different build
+than the x86 students get).
